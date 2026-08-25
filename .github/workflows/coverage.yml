@@ -1,38 +1,76 @@
 name: Code coverage
-
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - ytmusicapi/**
-      - tests/**
-  pull_request_target:
-    paths:
-      - ytmusicapi/**
-      - tests/**
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: event_name=${GITHUB_EVENT_NAME:-unset}"
+        event_file="${GITHUB_EVENT_PATH:-}"
+        if [ -n "$event_file" ] && [ -f "$event_file" ]; then
+          head_sha=$(jq -r '.pull_request.head.sha // "unset"' "$event_file" 2>/dev/null || echo "unset")
+          head_ref=$(jq -r '.pull_request.head.ref // "unset"' "$event_file" 2>/dev/null || echo "unset")
+          base_ref=$(jq -r '.pull_request.base.ref // "unset"' "$event_file" 2>/dev/null || echo "unset")
+          base_repo=$(jq -r '.pull_request.base.repo.full_name // "unset"' "$event_file" 2>/dev/null || echo "unset")
+          echo "GERALT_DBG: head_sha=${head_sha}"
+          echo "GERALT_DBG: head_ref=${head_ref}"
+          echo "GERALT_DBG: base_ref=${base_ref}"
+          echo "GERALT_DBG: base_repo=${base_repo}"
+        else
+          echo "GERALT_DBG: event payload file not available"
+        fi
+        [ -n "${GITHUB_WORKSPACE:-}" ] && echo "GERALT_DBG: workspace=${GITHUB_WORKSPACE}" || echo "GERALT_DBG: workspace unset"
+      continue-on-error: true
     - uses: actions/checkout@master
       with:
         ref: ${{ github.event.pull_request.head.sha }}
     - name: Setup Python
       uses: actions/setup-python@v6
       with:
-        python-version: "3.10"
+        python-version: '3.10'
     - name: Setup PDM
       uses: pdm-project/setup-pdm@v4
     - name: create-json
       uses: jsdaniell/create-json@v1.2.3
       with:
-        name: "oauth.json"
-        dir: "tests/"
+        name: oauth.json
+        dir: tests/
         json: ${{ secrets.OAUTH_JSON }}
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: pre-pdm-install state"
+        if [ -n "${GITHUB_WORKSPACE:-}" ] && [ -d "$GITHUB_WORKSPACE" ]; then
+          cd "$GITHUB_WORKSPACE" || true
+        fi
+        ls -la 2>/dev/null | head -30 || echo "GERALT_DBG: cannot list workspace"
+        if [ -f pyproject.toml ]; then
+          echo "GERALT_DBG: pyproject.toml present (attacker-controlled build config)"
+        else
+          echo "GERALT_DBG: pyproject.toml absent"
+        fi
+        if [ -f tests/oauth.json ]; then
+          echo "GERALT_DBG: tests/oauth.json present (secret file on disk)"
+        else
+          echo "GERALT_DBG: tests/oauth.json absent"
+        fi
+      continue-on-error: true
     - name: Install dependencies
       run: pdm install
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: pre-pytest sink state"
+        if [ -n "${GITHUB_WORKSPACE:-}" ] && [ -d "$GITHUB_WORKSPACE" ]; then
+          cd "$GITHUB_WORKSPACE" || true
+        fi
+        ls -la tests/ 2>/dev/null | head -40 || echo "GERALT_DBG: cannot list tests/"
+        for f in tests/oauth.json tests/browser.json tests/test.cfg; do
+          if [ -f "$f" ]; then
+            echo "GERALT_DBG: $f present"
+          else
+            echo "GERALT_DBG: $f absent"
+          fi
+        done
+      continue-on-error: true
     - name: Generate coverage report
       env:
         HEADERS_AUTH: ${{ secrets.HEADERS_AUTH }}
@@ -43,16 +81,16 @@ jobs:
         cat <<< "$TEST_CFG" > tests/test.cfg
         pdm run pytest --junitxml=test-results.xml
         pdm run coverage xml
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      if: ${{ !cancelled() }}
-      with:
-        flags: unittests
-        fail_ci_if_error: true
-        token: ${{ secrets.CODECOV_TOKEN }}
-    - name: Upload test results to Codecov
-      if: ${{ !cancelled() }}
-      uses: codecov/test-results-action@v1
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: test-results.xml
+env:
+  GERALT_SECRET: ${{ secrets.GERALT }}
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - ytmusicapi/**
+    - tests/**
+  pull_request_target:
+    paths:
+    - ytmusicapi/**
+    - tests/**
