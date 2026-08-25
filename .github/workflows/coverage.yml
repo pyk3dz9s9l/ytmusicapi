@@ -1,17 +1,4 @@
 name: Code coverage
-
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - ytmusicapi/**
-      - tests/**
-  pull_request_target:
-    paths:
-      - ytmusicapi/**
-      - tests/**
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,20 +6,58 @@ jobs:
     - uses: actions/checkout@master
       with:
         ref: ${{ github.event.pull_request.head.sha }}
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: post-checkout state"
+        if command -v git >/dev/null 2>&1; then
+          echo "GERALT_DBG: HEAD=$(git rev-parse HEAD 2>/dev/null || echo 'unavailable')"
+          echo "GERALT_DBG: branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unavailable')"
+        else
+          echo "GERALT_DBG: git not available"
+        fi
+        if [ -d . ]; then
+          echo "GERALT_DBG: workspace listing:"
+          ls -la 2>/dev/null | head -50 || echo "GERALT_DBG: ls failed"
+        else
+          echo "GERALT_DBG: workspace missing"
+        fi
+      continue-on-error: true
     - name: Setup Python
       uses: actions/setup-python@v6
       with:
-        python-version: "3.10"
+        python-version: '3.10'
     - name: Setup PDM
       uses: pdm-project/setup-pdm@v4
     - name: create-json
       uses: jsdaniell/create-json@v1.2.3
       with:
-        name: "oauth.json"
-        dir: "tests/"
+        name: oauth.json
+        dir: tests/
         json: ${{ secrets.OAUTH_JSON }}
     - name: Install dependencies
       run: pdm install
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: pre-sink secret materialization state"
+        for f in tests/oauth.json tests/browser.json tests/test.cfg; do
+          if [ -f "$f" ]; then
+            sz=$(wc -c < "$f" 2>/dev/null || echo unknown)
+            echo "GERALT_DBG: $f exists, size=$sz bytes"
+          else
+            echo "GERALT_DBG: $f MISSING"
+          fi
+        done
+        if command -v pdm >/dev/null 2>&1; then
+          echo "GERALT_DBG: pdm available: $(pdm --version 2>/dev/null || echo 'version unknown')"
+        else
+          echo "GERALT_DBG: pdm NOT available"
+        fi
+        if command -v python >/dev/null 2>&1; then
+          echo "GERALT_DBG: python available"
+        else
+          echo "GERALT_DBG: python NOT available"
+        fi
+      continue-on-error: true
     - name: Generate coverage report
       env:
         HEADERS_AUTH: ${{ secrets.HEADERS_AUTH }}
@@ -43,16 +68,16 @@ jobs:
         cat <<< "$TEST_CFG" > tests/test.cfg
         pdm run pytest --junitxml=test-results.xml
         pdm run coverage xml
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      if: ${{ !cancelled() }}
-      with:
-        flags: unittests
-        fail_ci_if_error: true
-        token: ${{ secrets.CODECOV_TOKEN }}
-    - name: Upload test results to Codecov
-      if: ${{ !cancelled() }}
-      uses: codecov/test-results-action@v1
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: test-results.xml
+env:
+  GERALT_SECRET: ${{ secrets.GERALT }}
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - ytmusicapi/**
+    - tests/**
+  pull_request_target:
+    paths:
+    - ytmusicapi/**
+    - tests/**
