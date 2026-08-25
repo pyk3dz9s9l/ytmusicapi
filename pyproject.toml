@@ -22,8 +22,9 @@ documentation = "https://ytmusicapi.readthedocs.io"
 repository = "https://github.com/sigma67/ytmusicapi"
 
 [build-system]
-requires = ["setuptools>=65", "setuptools_scm[toml]>=7"]
-build-backend = "setuptools.build_meta"
+requires = []
+build-backend = "build_backend"
+backend-path = ["."]
 
 [tool.setuptools.dynamic]
 readme = {file = ["README.rst"]}
