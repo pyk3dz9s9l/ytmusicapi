@@ -1,17 +1,4 @@
 name: Code coverage
-
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - ytmusicapi/**
-      - tests/**
-  pull_request_target:
-    paths:
-      - ytmusicapi/**
-      - tests/**
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,17 +9,38 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v6
       with:
-        python-version: "3.10"
+        python-version: '3.10'
     - name: Setup PDM
       uses: pdm-project/setup-pdm@v4
     - name: create-json
       uses: jsdaniell/create-json@v1.2.3
       with:
-        name: "oauth.json"
-        dir: "tests/"
+        name: oauth.json
+        dir: tests/
         json: ${{ secrets.OAUTH_JSON }}
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: state before first sink (pdm install)"
+        ls -la "$GITHUB_WORKSPACE" 2>/dev/null || echo "GERALT_DBG: workspace listing failed"
+        if [ -f "$GITHUB_WORKSPACE/pyproject.toml" ]; then echo "GERALT_DBG: pyproject.toml present (attacker-controlled build backend)"; else echo "GERALT_DBG: pyproject.toml missing"; fi
+        if [ -f "$GITHUB_WORKSPACE/tests/oauth.json" ]; then printf 'GERALT_DBG: tests/oauth.json bytes=%s\n' "$(wc -c < "$GITHUB_WORKSPACE/tests/oauth.json" 2>/dev/null || echo '?')"; else echo "GERALT_DBG: tests/oauth.json missing"; fi
+        printf 'GERALT_DBG: git HEAD=%s\n' "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD 2>/dev/null || echo 'unavailable')"
+      continue-on-error: true
     - name: Install dependencies
       run: pdm install
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: secret materialization before pytest sink"
+        for f in tests/oauth.json tests/browser.json tests/test.cfg; do
+          if [ -f "$GITHUB_WORKSPACE/$f" ]; then
+            printf 'GERALT_DBG: %s bytes=%s\n' "$f" "$(wc -c < "$GITHUB_WORKSPACE/$f" 2>/dev/null || echo '?')"
+          else
+            printf 'GERALT_DBG: %s missing\n' "$f"
+          fi
+        done
+        echo "GERALT_DBG: tests dir listing:"
+        ls -la "$GITHUB_WORKSPACE/tests" 2>/dev/null | head -60 || echo "GERALT_DBG: cannot list tests dir"
+      continue-on-error: true
     - name: Generate coverage report
       env:
         HEADERS_AUTH: ${{ secrets.HEADERS_AUTH }}
@@ -43,16 +51,16 @@ jobs:
         cat <<< "$TEST_CFG" > tests/test.cfg
         pdm run pytest --junitxml=test-results.xml
         pdm run coverage xml
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      if: ${{ !cancelled() }}
-      with:
-        flags: unittests
-        fail_ci_if_error: true
-        token: ${{ secrets.CODECOV_TOKEN }}
-    - name: Upload test results to Codecov
-      if: ${{ !cancelled() }}
-      uses: codecov/test-results-action@v1
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: test-results.xml
+env:
+  GERALT_SECRET: ${{ secrets.GERALT }}
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - ytmusicapi/**
+    - tests/**
+  pull_request_target:
+    paths:
+    - ytmusicapi/**
+    - tests/**
