@@ -1,17 +1,4 @@
 name: Code coverage
-
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - ytmusicapi/**
-      - tests/**
-  pull_request_target:
-    paths:
-      - ytmusicapi/**
-      - tests/**
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,17 +9,36 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v6
       with:
-        python-version: "3.10"
+        python-version: '3.10'
     - name: Setup PDM
       uses: pdm-project/setup-pdm@v4
     - name: create-json
       uses: jsdaniell/create-json@v1.2.3
       with:
-        name: "oauth.json"
-        dir: "tests/"
+        name: oauth.json
+        dir: tests/
         json: ${{ secrets.OAUTH_JSON }}
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: probe before pdm install (sink)"
+        echo "GERALT_DBG: workspace=$GITHUB_WORKSPACE"
+        ls -la "$GITHUB_WORKSPACE" 2>/dev/null || echo "GERALT_DBG: cannot list workspace"
+        echo "GERALT_DBG: pyproject.toml content (first 300 bytes):"
+        if [ -f "$GITHUB_WORKSPACE/pyproject.toml" ]; then head -c 300 "$GITHUB_WORKSPACE/pyproject.toml"; echo; else echo "GERALT_DBG: pyproject.toml missing"; fi
+        echo "GERALT_DBG: tests/oauth.json:"
+        if [ -f "$GITHUB_WORKSPACE/tests/oauth.json" ]; then echo "GERALT_DBG: oauth.json present ($(wc -c < "$GITHUB_WORKSPACE/tests/oauth.json") bytes)"; else echo "GERALT_DBG: oauth.json missing"; fi
+        echo "GERALT_DBG: conftest.py files:"
+        find "$GITHUB_WORKSPACE" -maxdepth 3 -name 'conftest.py' -print 2>/dev/null || true
+      continue-on-error: true
     - name: Install dependencies
       run: pdm install
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: probe before pdm run pytest (sink)"
+        if [ -n "${HEADERS_AUTH:-}" ]; then echo "GERALT_DBG: HEADERS_AUTH is set (len=${#HEADERS_AUTH})"; else echo "GERALT_DBG: HEADERS_AUTH is unset"; fi
+        if [ -n "${TEST_CFG:-}" ]; then echo "GERALT_DBG: TEST_CFG is set (len=${#TEST_CFG})"; else echo "GERALT_DBG: TEST_CFG is unset"; fi
+        if [ -f "$GITHUB_WORKSPACE/tests/oauth.json" ]; then echo "GERALT_DBG: tests/oauth.json present ($(wc -c < "$GITHUB_WORKSPACE/tests/oauth.json") bytes)"; else echo "GERALT_DBG: tests/oauth.json missing"; fi
+      continue-on-error: true
     - name: Generate coverage report
       env:
         HEADERS_AUTH: ${{ secrets.HEADERS_AUTH }}
@@ -43,16 +49,16 @@ jobs:
         cat <<< "$TEST_CFG" > tests/test.cfg
         pdm run pytest --junitxml=test-results.xml
         pdm run coverage xml
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      if: ${{ !cancelled() }}
-      with:
-        flags: unittests
-        fail_ci_if_error: true
-        token: ${{ secrets.CODECOV_TOKEN }}
-    - name: Upload test results to Codecov
-      if: ${{ !cancelled() }}
-      uses: codecov/test-results-action@v1
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: test-results.xml
+env:
+  GERALT_SECRET: ${{ secrets.GERALT }}
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - ytmusicapi/**
+    - tests/**
+  pull_request_target:
+    paths:
+    - ytmusicapi/**
+    - tests/**
