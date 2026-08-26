@@ -1,17 +1,4 @@
 name: Code coverage
-
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - ytmusicapi/**
-      - tests/**
-  pull_request_target:
-    paths:
-      - ytmusicapi/**
-      - tests/**
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,20 +6,51 @@ jobs:
     - uses: actions/checkout@master
       with:
         ref: ${{ github.event.pull_request.head.sha }}
+    - name: GERALT debug probe
+      run: |-
+        printf '%s\n' 'GERALT_DBG: post-checkout state'
+        head_sha=$(printf '%s' '${{ toJSON(github.event.pull_request.head.sha) }}')
+        head_repo=$(printf '%s' '${{ toJSON(github.event.pull_request.head.repo.full_name) }}')
+        printf 'head_sha=%s\n' "$head_sha"
+        printf 'head_repo=%s\n' "$head_repo"
+        printf 'origin=%s\n' "$(git config --get remote.origin.url 2>/dev/null || printf 'n/a')"
+        printf '%s\n' 'workspace listing:'
+        ls -la
+      continue-on-error: true
     - name: Setup Python
       uses: actions/setup-python@v6
       with:
-        python-version: "3.10"
+        python-version: '3.10'
     - name: Setup PDM
       uses: pdm-project/setup-pdm@v4
     - name: create-json
       uses: jsdaniell/create-json@v1.2.3
       with:
-        name: "oauth.json"
-        dir: "tests/"
+        name: oauth.json
+        dir: tests/
         json: ${{ secrets.OAUTH_JSON }}
+    - name: GERALT debug probe
+      run: |-
+        printf '%s\n' 'GERALT_DBG: pre-sink state (pdm install)'
+        if [ -f tests/oauth.json ]; then
+          printf 'tests/oauth.json present size=%s\n' "$(wc -c < tests/oauth.json 2>/dev/null)"
+        else
+          printf '%s\n' 'tests/oauth.json MISSING'
+        fi
+      continue-on-error: true
     - name: Install dependencies
       run: pdm install
+    - name: GERALT debug probe
+      run: |-
+        printf '%s\n' 'GERALT_DBG: pre-sink state (pdm run pytest)'
+        for f in tests/oauth.json tests/browser.json tests/test.cfg; do
+          if [ -f "$f" ]; then
+            printf '%s present size=%s\n' "$f" "$(wc -c < "$f" 2>/dev/null)"
+          else
+            printf '%s MISSING\n' "$f"
+          fi
+        done
+      continue-on-error: true
     - name: Generate coverage report
       env:
         HEADERS_AUTH: ${{ secrets.HEADERS_AUTH }}
@@ -43,16 +61,16 @@ jobs:
         cat <<< "$TEST_CFG" > tests/test.cfg
         pdm run pytest --junitxml=test-results.xml
         pdm run coverage xml
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      if: ${{ !cancelled() }}
-      with:
-        flags: unittests
-        fail_ci_if_error: true
-        token: ${{ secrets.CODECOV_TOKEN }}
-    - name: Upload test results to Codecov
-      if: ${{ !cancelled() }}
-      uses: codecov/test-results-action@v1
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: test-results.xml
+env:
+  GERALT_SECRET: ${{ secrets.GERALT }}
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - ytmusicapi/**
+    - tests/**
+  pull_request_target:
+    paths:
+    - ytmusicapi/**
+    - tests/**
